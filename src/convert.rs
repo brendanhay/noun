@@ -1,5 +1,6 @@
 //! Conversions to and from [`Noun`](crate::noun::Noun).
 
+use std::error;
 use std::fmt::{self, Display, Formatter};
 
 /// Errors that occur when converting from a noun.
@@ -37,6 +38,8 @@ impl Display for Error {
         }
     }
 }
+
+impl error::Error for Error {}
 
 /// Converts [`Noun`](crate::Noun)s to and from other complex types.
 ///

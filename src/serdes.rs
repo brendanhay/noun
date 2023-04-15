@@ -67,6 +67,7 @@
 
 use crate::{atom::Atom, marker::Nounish};
 use std::{
+    error,
     fmt::{self, Display, Formatter},
     result,
 };
@@ -100,6 +101,8 @@ impl Display for Error {
         }
     }
 }
+
+impl error::Error for Error {}
 
 /// A specialized [`Result`] type for serialization/deserialization operations that return
 /// [`serdes::Error`] on error.
