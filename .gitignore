@@ -1,2 +1,24 @@
-# Cargo.
+# Rust
 /target
+
+# Git
+/.pre-commit-config.yaml
+
+# Direnv
+/.direnv
+
+# Nix
+result*
+
+# OSX
+.DS_Store
+
+# Emacs/Vim
+*~
+*#
+.#*
+.*.sw[a-z]
+*.un~
+*.org
+.projectile
+TAGS
