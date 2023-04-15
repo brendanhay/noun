@@ -152,7 +152,7 @@ impl Atom {
         hasher.finish()
     }
 
-    /// Converts this atom into a byte slice.
+    /// Returns the atom's underlying little-endian byte slice.
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
@@ -326,6 +326,7 @@ impl_from_uint_for_atom!(u64);
 impl_from_uint_for_atom!(u128);
 impl_from_uint_for_atom!(usize);
 
+// XXX: document endian-ness to minimise footgun.
 impl From<Vec<u8>> for Atom {
     fn from(mut vec: Vec<u8>) -> Self {
         let len = match vec.iter().rposition(|x| *x != 0) {
