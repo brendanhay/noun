@@ -157,6 +157,34 @@ impl Atom {
         &self.bytes
     }
 
+    pub fn to_le_bytes(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+
+    pub fn to_be_bytes(&self) -> Vec<u8> {
+        let mut vec = self.to_le_bytes();
+        vec.reverse();
+        vec
+    }
+
+    pub fn from_le_bytes(mut vec: Vec<u8>) -> Self {
+        let len = match vec.iter().rposition(|x| *x != 0) {
+            Some(idx) => idx + 1,
+            None => 0,
+        };
+        vec.truncate(len);
+        let bit_len = bit_len(&vec[..]);
+        Self {
+            bytes: vec,
+            bit_len,
+        }
+    }
+
+    pub fn from_be_bytes(mut vec: Vec<u8>) -> Self {
+        vec.reverse();
+        Self::from_le_bytes(vec)
+    }
+
     /// Converts this atom into a string slice, returning an error if the atom is not composed of
     /// valid UTF-8 bytes.
     pub fn as_str(&self) -> Result<&str, Utf8Error> {
@@ -308,6 +336,13 @@ impl From<String> for Atom {
     }
 }
 
+/// Convert from a little-endian byte vector. Uses [`Atom::from_le_bytes`].
+impl From<Vec<u8>> for Atom {
+    fn from(vec: Vec<u8>) -> Self {
+        Atom::from_le_bytes(vec)
+    }
+}
+
 /// Convert an unsigned integer primitive into an atom.
 macro_rules! impl_from_uint_for_atom {
     ($uint:ty) => {
@@ -333,22 +368,6 @@ impl_from_uint_for_atom!(u32);
 impl_from_uint_for_atom!(u64);
 impl_from_uint_for_atom!(u128);
 impl_from_uint_for_atom!(usize);
-
-// XXX: document endian-ness to minimise footgun.
-impl From<Vec<u8>> for Atom {
-    fn from(mut vec: Vec<u8>) -> Self {
-        let len = match vec.iter().rposition(|x| *x != 0) {
-            Some(idx) => idx + 1,
-            None => 0,
-        };
-        vec.truncate(len);
-        let bit_len = bit_len(&vec[..]);
-        Self {
-            bytes: vec,
-            bit_len,
-        }
-    }
-}
 
 impl PartialEq<&Self> for Atom {
     fn eq(&self, other: &&Self) -> bool {

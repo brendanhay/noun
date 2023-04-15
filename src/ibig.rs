@@ -15,7 +15,7 @@ impl From<UBig> for Atom {
 impl From<&UBig> for Atom {
     fn from(ubig: &UBig) -> Self {
         // XXX: add endian-ness tests.
-        Self::from(ubig.to_le_bytes().to_vec())
+        Self::from_le_bytes(ubig.to_le_bytes().to_vec())
     }
 }
 
