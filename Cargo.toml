@@ -7,6 +7,10 @@ authors = ["Peter McEvoy <peter@tlon.io>"]
 [features]
 default = []
 thread-safe = []
+ibig = ["dep:ibig"]
 
 [lib]
 crate-type = ["lib", "staticlib"]
+
+[dependencies]
+ibig = { version = "0.3.6", optional = true, default-features = false }

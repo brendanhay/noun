@@ -21,6 +21,9 @@ pub mod marker;
 pub mod noun;
 pub mod serdes;
 
+#[cfg(feature = "ibig")]
+mod ibig;
+
 #[doc(inline)]
 pub use crate::atom::{Atom, Builder as AtomBuilder, Iter as AtomIter};
 #[doc(inline)]

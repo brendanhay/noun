@@ -316,6 +316,14 @@ macro_rules! impl_from_uint_for_atom {
                 Atom::from(Vec::from(uint.to_le_bytes()))
             }
         }
+
+        impl TryFrom<&Atom> for $uint {
+            type Error = ();
+
+            fn try_from(atom: &Atom) -> Result<Self, ()> {
+                atom_as_uint!(atom, $uint).ok_or(())
+            }
+        }
     };
 }
 

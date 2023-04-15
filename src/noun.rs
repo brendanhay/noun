@@ -168,6 +168,28 @@ impl From<Cell> for Rc<Noun> {
     }
 }
 
+impl TryFrom<Noun> for Atom {
+    type Error = convert::Error;
+
+    fn try_from(noun: Noun) -> Result<Self, Self::Error> {
+        match noun {
+            Noun::Atom(atom) => Ok(atom),
+            Noun::Cell(_cell) => Err(convert::Error::UnexpectedCell),
+        }
+    }
+}
+
+impl TryFrom<Noun> for Cell {
+    type Error = convert::Error;
+
+    fn try_from(noun: Noun) -> Result<Self, Self::Error> {
+        match noun {
+            Noun::Atom(_atom) => Err(convert::Error::UnexpectedAtom),
+            Noun::Cell(cell) => Ok(cell),
+        }
+    }
+}
+
 impl Jam for Noun {
     fn jam(self) -> Atom {
         fn encode_len(mut len: u64, bits: &mut AtomBuilder) {
