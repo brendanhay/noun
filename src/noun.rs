@@ -8,6 +8,8 @@ use crate::{
 use std::{
     collections::HashMap,
     fmt::{Display, Error, Formatter},
+    hash::Hash,
+    iter,
     mem::drop,
 };
 
@@ -41,6 +43,85 @@ impl Noun {
             Self::Atom(atom) => atom.hash(),
             Self::Cell(cell) => cell.hash(),
         }
+    }
+}
+
+impl Display for Noun {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        match self {
+            Self::Atom(atom) => atom.fmt(f),
+            Self::Cell(cell) => cell.fmt(f),
+        }
+    }
+}
+
+impl Jam for Noun {
+    fn jam(self) -> Atom {
+        fn encode_len(mut len: u64, bits: &mut AtomBuilder) {
+            let len_of_len = u64::BITS - len.leading_zeros();
+            for _ in 0..len_of_len {
+                bits.push_bit(false);
+            }
+            bits.push_bit(true);
+            if len_of_len != 0 {
+                // Don't write the most significant bit of the length because it's always 1.
+                while len != 1 {
+                    bits.push_bit((len & 1) != 0);
+                    len >>= 1;
+                }
+            }
+        }
+
+        fn encode_atom(atom: &Atom, bits: &mut AtomBuilder) {
+            // Atom tag = 0b0.
+            bits.push_bit(false);
+            encode_len(atom.bit_len() as u64, bits);
+            for bit in atom.iter() {
+                bits.push_bit(bit);
+            }
+        }
+
+        fn encode(noun: Rc<Noun>, bits: &mut AtomBuilder, cache: &mut HashMap<Rc<Noun>, u64>) {
+            if let Some(idx) = cache.get(&noun) {
+                if let Noun::Atom(ref atom) = *noun {
+                    let idx_bit_len = u64::from(u64::BITS - idx.leading_zeros());
+                    let atom_bit_len = atom.bit_len() as u64;
+                    // Backreferences to atoms are only encoded if they're shorter than the atom it
+                    // would reference.
+                    if atom_bit_len <= idx_bit_len {
+                        encode_atom(atom, bits);
+                        return;
+                    }
+                }
+                let idx = Atom::from(*idx);
+                // Backreference tag = 0b11.
+                bits.push_bit(true);
+                bits.push_bit(true);
+                encode_len(idx.bit_len() as u64, bits);
+                for bit in idx.iter() {
+                    bits.push_bit(bit);
+                }
+                return;
+            }
+
+            cache.insert(noun.clone(), bits.pos() as u64);
+            match *noun {
+                Noun::Atom(ref atom) => encode_atom(atom, bits),
+                Noun::Cell(ref cell) => {
+                    // Cell tag = 0b01.
+                    bits.push_bit(true);
+                    bits.push_bit(false);
+                    encode(cell.head(), bits, cache);
+                    encode(cell.tail(), bits, cache);
+                }
+            }
+        }
+
+        let noun = Rc::new(self);
+        let mut bits = Atom::builder();
+        let mut cache = HashMap::new();
+        encode(noun, &mut bits, &mut cache);
+        bits.into_atom()
     }
 }
 
@@ -135,14 +216,7 @@ impl Cue for Noun {
     }
 }
 
-impl Display for Noun {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        match self {
-            Self::Atom(atom) => atom.fmt(f),
-            Self::Cell(cell) => cell.fmt(f),
-        }
-    }
-}
+// Atom Conversions
 
 impl From<Atom> for Noun {
     fn from(atom: Atom) -> Self {
@@ -153,18 +227,6 @@ impl From<Atom> for Noun {
 impl From<Atom> for Rc<Noun> {
     fn from(atom: Atom) -> Self {
         Rc::new(Noun::Atom(atom))
-    }
-}
-
-impl From<Cell> for Noun {
-    fn from(cell: Cell) -> Self {
-        Self::Cell(cell)
-    }
-}
-
-impl From<Cell> for Rc<Noun> {
-    fn from(cell: Cell) -> Self {
-        Rc::new(Noun::Cell(cell))
     }
 }
 
@@ -179,9 +241,60 @@ impl TryFrom<Noun> for Atom {
     }
 }
 
+impl<'a> TryFrom<&'a Noun> for &'a Atom {
+    type Error = convert::Error;
+
+    fn try_from(noun: &'a Noun) -> Result<Self, Self::Error> {
+        match noun {
+            Noun::Atom(atom) => Ok(atom),
+            Noun::Cell(_cell) => Err(convert::Error::UnexpectedCell),
+        }
+    }
+}
+
+macro_rules! impl_from_atom_for_noun {
+    ($atom:ty) => {
+        impl From<$atom> for Noun {
+            fn from(atom: $atom) -> Self {
+                Self::Atom(Atom::from(atom))
+            }
+        }
+
+        impl TryFrom<Noun> for $atom {
+            type Error = ();
+
+            fn try_from(noun: Noun) -> Result<Self, Self::Error> {
+                Atom::try_from(noun).map_err(|_| ())?.try_into()
+            }
+        }
+    };
+}
+
+impl_from_atom_for_noun!(u8);
+impl_from_atom_for_noun!(u16);
+impl_from_atom_for_noun!(u32);
+impl_from_atom_for_noun!(u64);
+impl_from_atom_for_noun!(u128);
+impl_from_atom_for_noun!(usize);
+
+// Cell Conversions
+
+impl From<Cell> for Noun {
+    fn from(cell: Cell) -> Self {
+        Self::Cell(cell)
+    }
+}
+
+impl From<Cell> for Rc<Noun> {
+    fn from(cell: Cell) -> Self {
+        Rc::new(Noun::Cell(cell))
+    }
+}
+
 impl TryFrom<Noun> for Cell {
     type Error = convert::Error;
 
+    /// Attempt to parse a [`Cell`] from a [`Noun`], failing if an [`Atom`] is encountered.
     fn try_from(noun: Noun) -> Result<Self, Self::Error> {
         match noun {
             Noun::Atom(_atom) => Err(convert::Error::UnexpectedAtom),
@@ -190,75 +303,91 @@ impl TryFrom<Noun> for Cell {
     }
 }
 
-impl Jam for Noun {
-    fn jam(self) -> Atom {
-        fn encode_len(mut len: u64, bits: &mut AtomBuilder) {
-            let len_of_len = u64::BITS - len.leading_zeros();
-            for _ in 0..len_of_len {
-                bits.push_bit(false);
-            }
-            bits.push_bit(true);
-            if len_of_len != 0 {
-                // Don't write the most significant bit of the length because it's always 1.
-                while len != 1 {
-                    bits.push_bit((len & 1) != 0);
-                    len >>= 1;
-                }
-            }
+impl<'a> TryFrom<&'a Noun> for &'a Cell {
+    type Error = convert::Error;
+
+    /// Attempt to parse a [`Cell`] from a [`Noun`], failing if an [`Atom`] is encountered.
+    fn try_from(noun: &'a Noun) -> Result<Self, Self::Error> {
+        match noun {
+            Noun::Atom(_atom) => Err(convert::Error::UnexpectedAtom),
+            Noun::Cell(cell) => Ok(cell),
         }
-
-        fn encode_atom(atom: &Atom, bits: &mut AtomBuilder) {
-            // Atom tag = 0b0.
-            bits.push_bit(false);
-            encode_len(atom.bit_len() as u64, bits);
-            for bit in atom.iter() {
-                bits.push_bit(bit);
-            }
-        }
-
-        fn encode(noun: Rc<Noun>, bits: &mut AtomBuilder, cache: &mut HashMap<Rc<Noun>, u64>) {
-            if let Some(idx) = cache.get(&noun) {
-                if let Noun::Atom(ref atom) = *noun {
-                    let idx_bit_len = u64::from(u64::BITS - idx.leading_zeros());
-                    let atom_bit_len = atom.bit_len() as u64;
-                    // Backreferences to atoms are only encoded if they're shorter than the atom it
-                    // would reference.
-                    if atom_bit_len <= idx_bit_len {
-                        encode_atom(atom, bits);
-                        return;
-                    }
-                }
-                let idx = Atom::from(*idx);
-                // Backreference tag = 0b11.
-                bits.push_bit(true);
-                bits.push_bit(true);
-                encode_len(idx.bit_len() as u64, bits);
-                for bit in idx.iter() {
-                    bits.push_bit(bit);
-                }
-                return;
-            }
-
-            cache.insert(noun.clone(), bits.pos() as u64);
-            match *noun {
-                Noun::Atom(ref atom) => encode_atom(atom, bits),
-                Noun::Cell(ref cell) => {
-                    // Cell tag = 0b01.
-                    bits.push_bit(true);
-                    bits.push_bit(false);
-                    encode(cell.head(), bits, cache);
-                    encode(cell.tail(), bits, cache);
-                }
-            }
-        }
-
-        let noun = Rc::new(self);
-        let mut bits = Atom::builder();
-        let mut cache = HashMap::new();
-        encode(noun, &mut bits, &mut cache);
-        bits.into_atom()
     }
 }
+
+// Product Conversions
+
+/// Convert a pair to the noun `[A B]`.
+impl<A, B> From<(A, B)> for Noun
+where
+    A: Into<Noun>,
+    B: Into<Noun>,
+{
+    fn from((a, b): (A, B)) -> Self {
+        Self::Cell(Cell::from([a.into(), b.into()]))
+    }
+}
+
+impl<'a, A, B> TryFrom<&'a Noun> for (A, B)
+where
+    A: TryFrom<&'a Noun, Error = convert::Error>,
+    B: TryFrom<&'a Noun, Error = convert::Error>,
+{
+    type Error = convert::Error;
+
+    /// Attempt to parse a pair `[A B]` from a [`Noun`].
+    fn try_from(noun: &'a Noun) -> Result<Self, Self::Error> {
+        let cell: &'a Cell = noun.try_into()?;
+        let head: A = cell.head_ref().try_into()?;
+        let tail: B = cell.tail_ref().try_into()?;
+
+        Ok((head, tail))
+    }
+}
+
+/// Convert a vector to the null-terminated list `[A B C ~]`.
+impl<T> From<Vec<T>> for Noun
+where
+    T: Into<Noun>,
+{
+    fn from(vec: Vec<T>) -> Self {
+        Self::Cell(Cell::from(
+            vec.into_iter()
+                .map(|item| Rc::new(item.into()))
+                .chain(iter::once(Rc::new(Noun::null())))
+                .collect::<Vec<_>>(),
+        ))
+    }
+}
+
+impl<'a, T> TryFrom<&'a Noun> for Vec<T>
+where
+    T: TryFrom<&'a Noun, Error = convert::Error>,
+{
+    type Error = convert::Error;
+
+    /// Attempt to parse a null-terminated list `[A B C ~]`
+    /// from a [`Noun`].
+    fn try_from(noun: &'a Noun) -> Result<Self, Self::Error> {
+        convert!(noun => Vec<T>)
+    }
+}
+
+impl<'a, K, V> TryFrom<&'a Noun> for HashMap<K, V>
+where
+    K: Eq + Hash + TryFrom<&'a Noun, Error = convert::Error>,
+    V: TryFrom<&'a Noun, Error = convert::Error>,
+{
+    type Error = convert::Error;
+
+    /// Attempt to parse a map as a null-terminated list of pairs
+    /// `[[k0 v0] [k1 v1] [kN vN] ~]` from a [`Noun`].
+    fn try_from(noun: &'a Noun) -> Result<Self, Self::Error> {
+        convert!(noun => HashMap<K, V>)
+    }
+}
+
+/// Parsing Nouns
 
 impl TryFrom<&&str> for Noun {
     type Error = ();

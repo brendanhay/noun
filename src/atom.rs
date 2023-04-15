@@ -352,10 +352,18 @@ macro_rules! impl_from_uint_for_atom {
             }
         }
 
+        impl TryFrom<Atom> for $uint {
+            type Error = ();
+
+            fn try_from(atom: Atom) -> Result<Self, Self::Error> {
+                atom.try_into()
+            }
+        }
+
         impl TryFrom<&Atom> for $uint {
             type Error = ();
 
-            fn try_from(atom: &Atom) -> Result<Self, ()> {
+            fn try_from(atom: &Atom) -> Result<Self, Self::Error> {
                 atom_as_uint!(atom, $uint).ok_or(())
             }
         }
