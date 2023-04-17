@@ -1,10 +1,16 @@
 //! Conversions to and from [`Noun`](crate::noun::Noun).
 
-use std::error;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Display, Formatter};
+use std::hash::Hash;
+use std::ops::Deref;
+use std::{error, iter};
+
+use crate::Rc;
+use crate::{atom::Atom, cell::Cell, noun::Noun};
 
 /// Errors that occur when converting from a noun.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     /// An atom could not be converted into an unsigned integer.
     AtomToUint,
@@ -20,6 +26,8 @@ pub enum Error {
     UnexpectedAtom,
     /// Encountered a cell when an atom was expected.
     UnexpectedCell,
+    /// A cell could not be converted into an array of the expected length.
+    CellToArray,
 }
 
 impl Display for Error {
@@ -35,11 +43,250 @@ impl Display for Error {
             Self::MissingValue => write!(f, "the noun does not have a value at this axis"),
             Self::UnexpectedAtom => write!(f, "an atom was encountered when a cell was expected"),
             Self::UnexpectedCell => write!(f, "a cell was encountered when an atom was expected"),
+            Self::CellToArray => write!(
+                f,
+                "a cell could not be converted into an array of the expected length"
+            ),
         }
     }
 }
 
 impl error::Error for Error {}
+
+pub trait IsNoun: Sized {
+    fn encode_noun(&self) -> Noun;
+
+    fn decode_noun(noun: &Noun) -> Result<Self, Error>;
+}
+
+/// The null atom, `~`.
+impl IsNoun for () {
+    fn encode_noun(&self) -> Noun {
+        Noun::null()
+    }
+
+    fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+        match noun {
+            Noun::Atom(atom) if atom.is_null() => Ok(()),
+            Noun::Atom(_atom) => Err(Error::UnexpectedAtom),
+            Noun::Cell(_cell) => Err(Error::UnexpectedCell),
+        }
+    }
+}
+
+/// An arbitrary atom, `A`.
+///
+/// Encoding requires cloning the `Atom`. Use [`From<Atom>`] for zero-copy.
+impl IsNoun for Atom {
+    fn encode_noun(&self) -> Noun {
+        Noun::Atom(self.clone())
+    }
+
+    fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+        match noun {
+            Noun::Atom(atom) => Ok(atom.clone()),
+            Noun::Cell(_cell) => Err(Error::UnexpectedCell),
+        }
+    }
+}
+
+/// An arbitrary noun, `N`.
+///
+/// Encoding and decoding requires cloning `Noun`. Use [`From<Noun>`] for zero-copy.
+impl IsNoun for Noun {
+    fn encode_noun(&self) -> Noun {
+        self.clone()
+    }
+
+    fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+        Ok(noun.clone())
+    }
+}
+
+/// A pair `[A B]`.
+impl<A, B> IsNoun for (A, B)
+where
+    A: IsNoun,
+    B: IsNoun,
+{
+    fn encode_noun(&self) -> Noun {
+        Noun::from([self.0.encode_noun(), self.1.encode_noun()])
+    }
+
+    fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+        match noun {
+            Noun::Atom(atom) => Err(Error::UnexpectedAtom),
+            Noun::Cell(cell) => {
+                let a = A::decode_noun(cell.head_ref())?;
+                let b = B::decode_noun(cell.tail_ref())?;
+
+                Ok((a, b))
+            }
+        }
+    }
+}
+
+macro_rules! impl_noun_for_tuple {
+    ($( $ty:tt = $n:ident ),*) => {
+        /// A n-ary tuple, `[$($ty )*]`.
+        impl< $($ty),* > IsNoun for ( $($ty),* )
+        where
+            $(
+                $ty: IsNoun,
+            )*
+        {
+            fn encode_noun(&self) -> Noun {
+                let ( $($n),* ) = self;
+
+                Noun::from([
+                    $(
+                        $n.encode_noun(),
+                    )*
+                ])
+            }
+
+            fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+                match noun {
+                    Noun::Atom(_atom) => Err(Error::UnexpectedAtom),
+                    Noun::Cell(cell) => match cell.to_array() {
+                        Some([ $($n),* ]) => Ok((
+                            $(
+                                <$ty>::decode_noun($n.deref())?,
+                            )*
+                        )),
+                        None => Err(Error::CellToArray),
+                    },
+                }
+            }
+        }
+    };
+}
+
+impl_noun_for_tuple!(A = a, B = b, C = c);
+impl_noun_for_tuple!(A = a, B = b, C = c, D = d);
+impl_noun_for_tuple!(A = a, B = b, C = c, D = d, E = e);
+impl_noun_for_tuple!(A = a, B = b, C = c, D = d, E = e, F = f);
+impl_noun_for_tuple!(A = a, B = b, C = c, D = d, E = e, F = f, G = g);
+impl_noun_for_tuple!(A = a, B = b, C = c, D = d, E = e, F = f, G = g, H = h);
+
+/// A null-terminated list, `[T1 T2 TN ~]`.
+impl<T> IsNoun for Vec<T>
+where
+    T: IsNoun,
+{
+    fn encode_noun(&self) -> Noun {
+        Noun::Cell(Cell::from(
+            self.into_iter()
+                .map(|item| Rc::new(item.encode_noun()))
+                .chain(iter::once(Rc::new(Noun::null())))
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+        let mut noun = noun;
+        let mut vec: Vec<T> = Vec::new();
+
+        loop {
+            match noun {
+                Noun::Atom(atom) if atom.is_null() => return Ok(vec),
+                Noun::Atom(_atom) => return Err(Error::ExpectedNull),
+                Noun::Cell(cell) => {
+                    let item = T::decode_noun(cell.head_ref())?;
+                    vec.push(item);
+
+                    noun = cell.tail_ref();
+                }
+            }
+        }
+    }
+}
+
+/// A null-terminated map, `[[k0 v0] [k1 v1] ... [kN vN] ~]`.
+impl<K, V> IsNoun for HashMap<K, V>
+where
+    K: Eq + Hash + IsNoun,
+    V: IsNoun,
+{
+    fn encode_noun(&self) -> Noun {
+        self.iter()
+            .map(|(k, v)| {
+                // Avoids unnecessary cloning going through (A, B).encode_noun().
+                Noun::Cell(Cell::from([k.encode_noun(), v.encode_noun()]))
+            })
+            .collect::<Vec<_>>()
+            .encode_noun()
+    }
+
+    fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+        let vec: Vec<(K, V)> = Vec::decode_noun(noun)?;
+        Ok(vec.into_iter().collect())
+    }
+}
+
+/// A null-terminated map, `[[k0 v0] [k1 v1] ... [kN vN] ~]`.
+impl<K, V> IsNoun for BTreeMap<K, V>
+where
+    K: Ord + IsNoun,
+    V: IsNoun,
+{
+    fn encode_noun(&self) -> Noun {
+        self.iter()
+            .map(|(k, v)| {
+                // Avoids unnecessary cloning going through (A, B).encode_noun().
+                Noun::Cell(Cell::from([k.encode_noun(), v.encode_noun()]))
+            })
+            .collect::<Vec<_>>()
+            .encode_noun()
+    }
+
+    fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+        let vec: Vec<(K, V)> = Vec::decode_noun(noun)?;
+        Ok(vec.into_iter().collect())
+    }
+}
+
+/// Pointer wrapper types such as `Rc<T>`, `Box<T>`, etc.
+macro_rules! impl_noun_for_pointers {
+    ($( $ty:ty $(: $bounds:ident)? ),*) => {
+        $(
+            impl<T: IsNoun $(+ $bounds)?> IsNoun for $ty {
+                fn encode_noun(&self) -> Noun {
+                    self.deref().encode_noun()
+                }
+
+                fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+                    Ok(<$ty>::new(T::decode_noun(noun)?))
+                }
+            }
+        )*
+    };
+}
+
+impl_noun_for_pointers!(std::rc::Rc<T>, std::sync::Arc<T>, std::boxed::Box<T>);
+
+impl<T> IsNoun for Option<T>
+where
+    T: IsNoun,
+{
+    fn encode_noun(&self) -> Noun {
+        match self {
+            Some(x) => Noun::from([().encode_noun(), x.encode_noun()]),
+            None => Noun::null(),
+        }
+    }
+
+    fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+        match noun {
+            Noun::Atom(atom) if atom.is_null() => Ok(None),
+            Noun::Atom(_atom) => Err(Error::UnexpectedAtom),
+            Noun::Cell(_cell) => {
+                let ((), tail) = <((), T)>::decode_noun(noun)?;
+                Ok(Some(tail))
+            }
+        }
+    }
+}
 
 /// Converts [`Noun`](crate::Noun)s to and from other complex types.
 ///

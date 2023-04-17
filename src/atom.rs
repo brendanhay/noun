@@ -339,16 +339,16 @@ impl From<String> for Atom {
 /// Convert from a little-endian byte vector. Uses [`Atom::from_le_bytes`].
 impl From<Vec<u8>> for Atom {
     fn from(vec: Vec<u8>) -> Self {
-        Atom::from_le_bytes(vec)
+        Self::from_le_bytes(vec)
     }
 }
 
 /// Convert an unsigned integer primitive into an atom.
-macro_rules! impl_from_uint_for_atom {
+macro_rules! impl_from_for_atom {
     ($uint:ty) => {
         impl From<$uint> for Atom {
             fn from(uint: $uint) -> Self {
-                Atom::from(Vec::from(uint.to_le_bytes()))
+                Atom::from_le_bytes(Vec::from(uint.to_le_bytes()))
             }
         }
 
@@ -356,7 +356,7 @@ macro_rules! impl_from_uint_for_atom {
             type Error = ();
 
             fn try_from(atom: Atom) -> Result<Self, Self::Error> {
-                atom.try_into()
+                atom_as_uint!(atom, $uint).ok_or(())
             }
         }
 
@@ -370,12 +370,12 @@ macro_rules! impl_from_uint_for_atom {
     };
 }
 
-impl_from_uint_for_atom!(u8);
-impl_from_uint_for_atom!(u16);
-impl_from_uint_for_atom!(u32);
-impl_from_uint_for_atom!(u64);
-impl_from_uint_for_atom!(u128);
-impl_from_uint_for_atom!(usize);
+impl_from_for_atom!(u8);
+impl_from_for_atom!(u16);
+impl_from_for_atom!(u32);
+impl_from_for_atom!(u64);
+impl_from_for_atom!(u128);
+impl_from_for_atom!(usize);
 
 impl PartialEq<&Self> for Atom {
     fn eq(&self, other: &&Self) -> bool {

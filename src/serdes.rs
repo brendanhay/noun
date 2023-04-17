@@ -73,7 +73,7 @@ use std::{
 };
 
 /// Errors that occur when serializing/deserializing.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     /// Building up an atom with [`atom::Builder`](crate::atom::Builder) failed.
     AtomBuilding,

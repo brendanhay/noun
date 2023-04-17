@@ -225,12 +225,24 @@ macro_rules! impl_from_array_for_cell {
                 cell_from_array!(atoms)
             }
         }
+
+        impl From<[Atom; $len]> for Noun {
+            fn from(atoms: [Atom; $len]) -> Self {
+                Noun::from(Cell::from(atoms))
+            }
+        }
     };
     ([Cell; $len:expr]) => {
         impl From<[Cell; $len]> for Cell {
-            fn from(cells: [Self; $len]) -> Self {
+            fn from(cells: [Cell; $len]) -> Self {
                 let cells = cells.map(|c| Rc::new(Noun::from(c)));
                 cell_from_array!(cells)
+            }
+        }
+
+        impl From<[Cell; $len]> for Noun {
+            fn from(cells: [Cell; $len]) -> Self {
+                Noun::Cell(Cell::from(cells))
             }
         }
     };
@@ -241,11 +253,23 @@ macro_rules! impl_from_array_for_cell {
                 cell_from_array!(nouns)
             }
         }
+
+        impl From<[Noun; $len]> for Noun {
+            fn from(nouns: [Noun; $len]) -> Self {
+                Noun::Cell(Cell::from(nouns))
+            }
+        }
     };
     ([Rc<Noun>; $len:expr]) => {
         impl From<[Rc<Noun>; $len]> for Cell {
             fn from(nouns: [Rc<Noun>; $len]) -> Self {
                 cell_from_array!(nouns)
+            }
+        }
+
+        impl From<[Rc<Noun>; $len]> for Noun {
+            fn from(nouns: [Rc<Noun>; $len]) -> Self {
+                Noun::Cell(Cell::from(nouns))
             }
         }
     };
@@ -254,6 +278,12 @@ macro_rules! impl_from_array_for_cell {
             fn from(atom_srcs: [$atom_src; $len]) -> Self {
                 let atom_srcs = atom_srcs.map(|a| Rc::new(Noun::from(Atom::from(a))));
                 cell_from_array!(atom_srcs)
+            }
+        }
+
+        impl From<[$atom_src; $len]> for Noun {
+            fn from(atom_srcs: [$atom_src; $len]) -> Self {
+                Noun::Cell(Cell::from(atom_srcs))
             }
         }
     };

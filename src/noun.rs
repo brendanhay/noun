@@ -7,6 +7,7 @@ use crate::{
 };
 use std::{
     collections::HashMap,
+    convert::Infallible,
     fmt::{Display, Error, Formatter},
     hash::Hash,
     iter,
@@ -216,8 +217,6 @@ impl Cue for Noun {
     }
 }
 
-// Atom Conversions
-
 impl From<Atom> for Noun {
     fn from(atom: Atom) -> Self {
         Self::Atom(atom)
@@ -230,55 +229,6 @@ impl From<Atom> for Rc<Noun> {
     }
 }
 
-impl TryFrom<Noun> for Atom {
-    type Error = convert::Error;
-
-    fn try_from(noun: Noun) -> Result<Self, Self::Error> {
-        match noun {
-            Noun::Atom(atom) => Ok(atom),
-            Noun::Cell(_cell) => Err(convert::Error::UnexpectedCell),
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a Noun> for &'a Atom {
-    type Error = convert::Error;
-
-    fn try_from(noun: &'a Noun) -> Result<Self, Self::Error> {
-        match noun {
-            Noun::Atom(atom) => Ok(atom),
-            Noun::Cell(_cell) => Err(convert::Error::UnexpectedCell),
-        }
-    }
-}
-
-macro_rules! impl_from_atom_for_noun {
-    ($atom:ty) => {
-        impl From<$atom> for Noun {
-            fn from(atom: $atom) -> Self {
-                Self::Atom(Atom::from(atom))
-            }
-        }
-
-        impl TryFrom<Noun> for $atom {
-            type Error = ();
-
-            fn try_from(noun: Noun) -> Result<Self, Self::Error> {
-                Atom::try_from(noun).map_err(|_| ())?.try_into()
-            }
-        }
-    };
-}
-
-impl_from_atom_for_noun!(u8);
-impl_from_atom_for_noun!(u16);
-impl_from_atom_for_noun!(u32);
-impl_from_atom_for_noun!(u64);
-impl_from_atom_for_noun!(u128);
-impl_from_atom_for_noun!(usize);
-
-// Cell Conversions
-
 impl From<Cell> for Noun {
     fn from(cell: Cell) -> Self {
         Self::Cell(cell)
@@ -290,104 +240,6 @@ impl From<Cell> for Rc<Noun> {
         Rc::new(Noun::Cell(cell))
     }
 }
-
-impl TryFrom<Noun> for Cell {
-    type Error = convert::Error;
-
-    /// Attempt to parse a [`Cell`] from a [`Noun`], failing if an [`Atom`] is encountered.
-    fn try_from(noun: Noun) -> Result<Self, Self::Error> {
-        match noun {
-            Noun::Atom(_atom) => Err(convert::Error::UnexpectedAtom),
-            Noun::Cell(cell) => Ok(cell),
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a Noun> for &'a Cell {
-    type Error = convert::Error;
-
-    /// Attempt to parse a [`Cell`] from a [`Noun`], failing if an [`Atom`] is encountered.
-    fn try_from(noun: &'a Noun) -> Result<Self, Self::Error> {
-        match noun {
-            Noun::Atom(_atom) => Err(convert::Error::UnexpectedAtom),
-            Noun::Cell(cell) => Ok(cell),
-        }
-    }
-}
-
-// Product Conversions
-
-/// Convert a pair to the noun `[A B]`.
-impl<A, B> From<(A, B)> for Noun
-where
-    A: Into<Noun>,
-    B: Into<Noun>,
-{
-    fn from((a, b): (A, B)) -> Self {
-        Self::Cell(Cell::from([a.into(), b.into()]))
-    }
-}
-
-impl<'a, A, B> TryFrom<&'a Noun> for (A, B)
-where
-    A: TryFrom<&'a Noun, Error = convert::Error>,
-    B: TryFrom<&'a Noun, Error = convert::Error>,
-{
-    type Error = convert::Error;
-
-    /// Attempt to parse a pair `[A B]` from a [`Noun`].
-    fn try_from(noun: &'a Noun) -> Result<Self, Self::Error> {
-        let cell: &'a Cell = noun.try_into()?;
-        let head: A = cell.head_ref().try_into()?;
-        let tail: B = cell.tail_ref().try_into()?;
-
-        Ok((head, tail))
-    }
-}
-
-/// Convert a vector to the null-terminated list `[A B C ~]`.
-impl<T> From<Vec<T>> for Noun
-where
-    T: Into<Noun>,
-{
-    fn from(vec: Vec<T>) -> Self {
-        Self::Cell(Cell::from(
-            vec.into_iter()
-                .map(|item| Rc::new(item.into()))
-                .chain(iter::once(Rc::new(Noun::null())))
-                .collect::<Vec<_>>(),
-        ))
-    }
-}
-
-impl<'a, T> TryFrom<&'a Noun> for Vec<T>
-where
-    T: TryFrom<&'a Noun, Error = convert::Error>,
-{
-    type Error = convert::Error;
-
-    /// Attempt to parse a null-terminated list `[A B C ~]`
-    /// from a [`Noun`].
-    fn try_from(noun: &'a Noun) -> Result<Self, Self::Error> {
-        convert!(noun => Vec<T>)
-    }
-}
-
-impl<'a, K, V> TryFrom<&'a Noun> for HashMap<K, V>
-where
-    K: Eq + Hash + TryFrom<&'a Noun, Error = convert::Error>,
-    V: TryFrom<&'a Noun, Error = convert::Error>,
-{
-    type Error = convert::Error;
-
-    /// Attempt to parse a map as a null-terminated list of pairs
-    /// `[[k0 v0] [k1 v1] [kN vN] ~]` from a [`Noun`].
-    fn try_from(noun: &'a Noun) -> Result<Self, Self::Error> {
-        convert!(noun => HashMap<K, V>)
-    }
-}
-
-/// Parsing Nouns
 
 impl TryFrom<&&str> for Noun {
     type Error = ();

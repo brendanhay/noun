@@ -7,7 +7,7 @@ use ibig::UBig;
 impl From<UBig> for Atom {
     fn from(ubig: UBig) -> Self {
         // XXX: add endian-ness tests.
-        ubig.into()
+        Self::from_le_bytes(ubig.to_le_bytes().to_vec())
     }
 }
 
@@ -22,7 +22,7 @@ impl From<&UBig> for Atom {
 #[cfg(feature = "ibig")]
 impl From<Atom> for UBig {
     fn from(atom: Atom) -> Self {
-        atom.into()
+        Self::from_le_bytes(atom.as_bytes())
     }
 }
 
