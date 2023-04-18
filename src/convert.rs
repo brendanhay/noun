@@ -90,6 +90,27 @@ impl IsNoun for Atom {
     }
 }
 
+macro_rules! impl_noun_for_uints {
+    ($( $uint:ty ),*) => {
+        $(
+            impl IsNoun for $uint {
+                fn encode_noun(&self) -> Noun {
+                    Noun::Atom(Atom::from(*self))
+                }
+
+                fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+                    match noun {
+                        Noun::Atom(atom) => Ok(Self::try_from(atom).map_err(|_| Error::AtomToUint)?),
+                        Noun::Cell(_cell) => Err(Error::UnexpectedCell),
+                    }
+                }
+            }
+        )*
+    }
+}
+
+impl_noun_for_uints!(u8, u16, u32, u64, u128, usize);
+
 /// An arbitrary noun, `N`.
 ///
 /// Encoding and decoding requires cloning `Noun`. Use [`From<Noun>`] for zero-copy.
