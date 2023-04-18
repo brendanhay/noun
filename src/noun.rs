@@ -7,10 +7,8 @@ use crate::{
 };
 use std::{
     collections::HashMap,
-    convert::Infallible,
     fmt::{Display, Error, Formatter},
     hash::Hash,
-    iter,
     mem::drop,
 };
 

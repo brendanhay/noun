@@ -1,9 +1,10 @@
-use crate::{atom::Atom, convert, noun::Noun};
+use crate::{
+    atom::Atom,
+    convert::{Error, IsNoun},
+    noun::Noun,
+};
 use ibig::UBig;
 
-// Atoms
-
-#[cfg(feature = "ibig")]
 impl From<UBig> for Atom {
     fn from(ubig: UBig) -> Self {
         // XXX: add endian-ness tests.
@@ -11,7 +12,6 @@ impl From<UBig> for Atom {
     }
 }
 
-#[cfg(feature = "ibig")]
 impl From<&UBig> for Atom {
     fn from(ubig: &UBig) -> Self {
         // XXX: add endian-ness tests.
@@ -19,27 +19,24 @@ impl From<&UBig> for Atom {
     }
 }
 
-#[cfg(feature = "ibig")]
 impl From<Atom> for UBig {
     fn from(atom: Atom) -> Self {
         Self::from_le_bytes(atom.as_bytes())
     }
 }
 
-#[cfg(feature = "ibig")]
 impl From<&Atom> for UBig {
     fn from(atom: &Atom) -> Self {
         Self::from_le_bytes(atom.as_bytes())
     }
 }
 
-// Nouns
+impl IsNoun for UBig {
+    fn encode_noun(&self) -> Noun {
+        Atom::from(self).encode_noun()
+    }
 
-#[cfg(feature = "ibig")]
-impl TryFrom<Noun> for UBig {
-    type Error = convert::Error;
-
-    fn try_from(noun: Noun) -> Result<Self, Self::Error> {
-        Ok(Self::from(Atom::try_from(noun)?))
+    fn decode_noun(noun: &Noun) -> Result<Self, Error> {
+        Ok(UBig::from(Atom::decode_noun(noun)?))
     }
 }

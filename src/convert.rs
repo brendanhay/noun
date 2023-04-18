@@ -115,7 +115,7 @@ where
 
     fn decode_noun(noun: &Noun) -> Result<Self, Error> {
         match noun {
-            Noun::Atom(atom) => Err(Error::UnexpectedAtom),
+            Noun::Atom(_atom) => Err(Error::UnexpectedAtom),
             Noun::Cell(cell) => {
                 let a = A::decode_noun(cell.head_ref())?;
                 let b = B::decode_noun(cell.tail_ref())?;
