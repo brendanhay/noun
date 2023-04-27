@@ -345,37 +345,34 @@ impl From<Vec<u8>> for Atom {
 
 /// Convert an unsigned integer primitive into an atom.
 macro_rules! impl_from_for_atom {
-    ($uint:ty) => {
-        impl From<$uint> for Atom {
-            fn from(uint: $uint) -> Self {
-                Atom::from_le_bytes(Vec::from(uint.to_le_bytes()))
+    ( $($uint:ty),* ) => {
+        $(
+            impl From<$uint> for Atom {
+                fn from(uint: $uint) -> Self {
+                    Atom::from_le_bytes(Vec::from(uint.to_le_bytes()))
+                }
             }
-        }
 
-        impl TryFrom<Atom> for $uint {
-            type Error = ();
+            impl TryFrom<Atom> for $uint {
+                type Error = ();
 
-            fn try_from(atom: Atom) -> Result<Self, Self::Error> {
-                atom_as_uint!(atom, $uint).ok_or(())
+                fn try_from(atom: Atom) -> Result<Self, Self::Error> {
+                    atom_as_uint!(atom, $uint).ok_or(())
+                }
             }
-        }
 
-        impl TryFrom<&Atom> for $uint {
-            type Error = ();
+            impl TryFrom<&Atom> for $uint {
+                type Error = ();
 
-            fn try_from(atom: &Atom) -> Result<Self, Self::Error> {
-                atom_as_uint!(atom, $uint).ok_or(())
+                fn try_from(atom: &Atom) -> Result<Self, Self::Error> {
+                    atom_as_uint!(atom, $uint).ok_or(())
+                }
             }
-        }
+        )*
     };
 }
 
-impl_from_for_atom!(u8);
-impl_from_for_atom!(u16);
-impl_from_for_atom!(u32);
-impl_from_for_atom!(u64);
-impl_from_for_atom!(u128);
-impl_from_for_atom!(usize);
+impl_from_for_atom!(u8, u16, u32, u64, u128, usize);
 
 impl PartialEq<&Self> for Atom {
     fn eq(&self, other: &&Self) -> bool {
